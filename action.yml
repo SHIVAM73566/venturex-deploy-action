@@ -7,17 +7,17 @@ branding:
   color: 'blue'
 
 pricing:
-  - name: 'Starter'
-    description: 'Deploy to 1 server with full support'
-    price: 49
+  - name: 'Single'
+    description: 'Deploy to 1 server - Limited features, AI included, 5-day free AI trial'
+    price: 89.99
     billing: monthly
   - name: 'Professional'
-    description: 'Deploy to 5 servers with priority support'
-    price: 199
+    description: 'Deploy to 5 servers - Full business features, priority support'
+    price: 150.22
     billing: monthly
   - name: 'Enterprise'
-    description: 'Unlimited servers with dedicated support'
-    price: 499
+    description: 'Unlimited servers - Full updates for company/big business, dedicated support. Use code SAVE29 for $29 off'
+    price: 350
     billing: monthly
 
 inputs:

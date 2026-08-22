@@ -4,15 +4,17 @@ Deploy VentureX ERP & CRM - AI-Powered Business Operating System to your server 
 
 [![GitHub Marketplace](https://img.shields.io/badge/Available%20on-GitHub%20Marketplace-blue)](https://github.com/marketplace/actions/venturex-erp-crm-deploy)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Price](https://img.shields.io/badge/Price-%2449%2Fmonth-orange)](https://github.com/marketplace/actions/venturex-erp-crm-deploy)
+[![Price](https://img.shields.io/badge/Price-%2489.99%2Fmonth-orange)](https://github.com/marketplace/actions/venturex-erp-crm-deploy)
 
 ## Pricing Plans
 
 | Plan | Price | Features |
 |------|-------|----------|
-| **Starter** | $49/month | Deploy to 1 server, full support |
-| **Professional** | $199/month | Deploy to 5 servers, priority support |
-| **Enterprise** | $499/month | Unlimited servers, dedicated support |
+| **Single** | $89.99/month | Deploy to 1 server - Limited features, AI included, 5-day free AI trial |
+| **Professional** | $150.22/month | Deploy to 5 servers - Full business features, priority support |
+| **Enterprise** | $350/month | Unlimited servers - Full updates for company/big business, dedicated support |
+
+> **Enterprise Discount:** Use code `SAVE29` at checkout for $29 off your first month!
 
 ## What This Action Does
 
