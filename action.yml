@@ -6,6 +6,20 @@ branding:
   icon: 'package'
   color: 'blue'
 
+pricing:
+  - name: 'Starter'
+    description: 'Deploy to 1 server with full support'
+    price: 49
+    billing: monthly
+  - name: 'Professional'
+    description: 'Deploy to 5 servers with priority support'
+    price: 199
+    billing: monthly
+  - name: 'Enterprise'
+    description: 'Unlimited servers with dedicated support'
+    price: 499
+    billing: monthly
+
 inputs:
   server-host:
     description: 'Your server hostname or IP address'
