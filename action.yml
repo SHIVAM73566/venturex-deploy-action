@@ -1,0 +1,231 @@
+name: 'VentureX ERP & CRM Deploy'
+description: 'Deploy VentureX ERP & CRM - AI-Powered Business Operating System to your server in one click'
+author: 'SHIVAM73566'
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  server-host:
+    description: 'Your server hostname or IP address'
+    required: true
+  server-user:
+    description: 'SSH username for your server'
+    required: true
+    default: 'root'
+  server-key:
+    description: 'SSH private key for authentication'
+    required: true
+  server-port:
+    description: 'SSH port number'
+    required: false
+    default: '22'
+  domain:
+    description: 'Your domain name (e.g., example.com)'
+    required: true
+  db-name:
+    description: 'MySQL database name'
+    required: true
+    default: 'venturex_erp'
+  db-user:
+    description: 'MySQL database username'
+    required: true
+    default: 'venturex_user'
+  db-password:
+    description: 'MySQL database password'
+    required: true
+  install-path:
+    description: 'Installation path on server'
+    required: false
+    default: '/var/www/html'
+  php-version:
+    description: 'PHP version to install'
+    required: false
+    default: '8.3'
+  use-docker:
+    description: 'Use Docker for deployment (true/false)'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        echo "Validating deployment configuration..."
+        if [ -z "${{ inputs.server-host }}" ]; then
+          echo "Error: server-host is required"
+          exit 1
+        fi
+        if [ -z "${{ inputs.domain }}" ]; then
+          echo "Error: domain is required"
+          exit 1
+        fi
+        echo "Configuration validated successfully"
+
+    - name: Setup SSH connection
+      shell: bash
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ inputs.server-key }}" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        ssh-keyscan -p ${{ inputs.server-port }} ${{ inputs.server-host }} >> ~/.ssh/known_hosts 2>/dev/null
+        echo "SSH connection configured"
+
+    - name: Install dependencies on server
+      shell: bash
+      run: |
+        ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << 'ENDSSH'
+          echo "Updating system packages..."
+          apt-get update -qq
+          
+          echo "Installing PHP ${{ inputs.php-version }}..."
+          apt-get install -y -qq software-properties-common
+          add-apt-repository -y ppa:ondrej/php
+          apt-get update -qq
+          apt-get install -y -qq php${{ inputs.php-version }}-cli php${{ inputs.php.version }}-mysql php${{ inputs.php.version }}-mbstring php${{ inputs.php.version }}-xml php${{ inputs.php.version }}-curl php${{ inputs.php.version }}-gd php${{ inputs.php.version }}-zip php${{ inputs.php.version }}-bcmath php${{ inputs.php.version }}-tokenizer php${{ inputs.php.version }}-fileinfo
+          
+          echo "Installing MySQL..."
+          apt-get install -y -qq mysql-server
+          
+          echo "Installing Composer..."
+          curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+          
+          echo "Installing Node.js 20..."
+          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+          apt-get install -y -qq nodejs
+          
+          echo "Installing Nginx..."
+          apt-get install -y -qq nginx
+          
+          echo "All dependencies installed successfully"
+        ENDSSH
+
+    - name: Setup database
+      shell: bash
+      run: |
+        ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << ENDSSH
+          echo "Creating MySQL database and user..."
+          mysql -u root << MYSQL
+            CREATE DATABASE IF NOT EXISTS ${{ inputs.db-name }};
+            CREATE USER IF NOT EXISTS '${{ inputs.db-user }}'@'localhost' IDENTIFIED BY '${{ inputs.db-password }}';
+            GRANT ALL PRIVILEGES ON ${{ inputs.db-name }}.* TO '${{ inputs.db-user }}'@'localhost';
+            FLUSH PRIVILEGES;
+          MYSQL
+          echo "Database configured successfully"
+        ENDSSH
+
+    - name: Deploy VentureX ERP
+      shell: bash
+      run: |
+        ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << ENDSSH
+          echo "Downloading VentureX ERP & CRM..."
+          cd ${{ inputs.install-path }}
+          
+          # Clone the repository
+          git clone https://github.com/SHIVAM73566/VentureX-ERP-CRM.git venturex-erp
+          cd venturex-erp
+          
+          echo "Installing PHP dependencies..."
+          composer install --no-dev --optimize-autoloader
+          
+          echo "Installing Node dependencies..."
+          npm install
+          npm run build
+          
+          echo "Configuring environment..."
+          cp .env.example .env
+          php artisan key:generate
+          
+          # Update .env with database credentials
+          sed -i "s/DB_DATABASE=.*/DB_DATABASE=${{ inputs.db-name }}/" .env
+          sed -i "s/DB_USERNAME=.*/DB_USERNAME=${{ inputs.db-user }}/" .env
+          sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=${{ inputs.db-password }}/" .env
+          
+          echo "Running database migrations..."
+          php artisan migrate --force
+          
+          echo "Seeding demo data..."
+          php artisan db:seed --force
+          
+          echo "Setting permissions..."
+          chown -R www-data:www-data storage bootstrap/cache
+          chmod -R 775 storage bootstrap/cache
+          
+          echo "VentureX ERP deployed successfully!"
+        ENDSSH
+
+    - name: Configure Nginx
+      shell: bash
+      run: |
+        ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << ENDSSH
+          echo "Configuring Nginx..."
+          cat > /etc/nginx/sites-available/venturex << NGINX
+          server {
+              listen 80;
+              server_name ${{ inputs.domain }};
+              root ${{ inputs.install-path }}/venturex-erp/public;
+              
+              index index.php index.html;
+              
+              location / {
+                  try_files \$uri \$uri/ /index.php?\$query_string;
+              }
+              
+              location ~ \.php\$ {
+                  fastcgi_pass unix:/var/run/php/php${{ inputs.php.version }}-fpm.sock;
+                  fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
+                  include fastcgi_params;
+              }
+              
+              location ~ /\.(?!well-known).* {
+                  deny all;
+              }
+          }
+          NGINX
+          
+          ln -sf /etc/nginx/sites-available/venturex /etc/nginx/sites-enabled/
+          rm -f /etc/nginx/sites-enabled/default
+          
+          nginx -t
+          systemctl reload nginx
+          
+          echo "Nginx configured successfully"
+        ENDSSH
+
+    - name: Enable HTTPS with Let's Encrypt
+      shell: bash
+      run: |
+        ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << ENDSSH
+          echo "Installing Certbot..."
+          apt-get install -y -qq certbot python3-certbot-nginx
+          
+          echo "Obtaining SSL certificate..."
+          certbot --nginx -d ${{ inputs.domain }} --non-interactive --agree-tos --email admin@${{ inputs.domain }}
+          
+          echo "SSL certificate installed successfully"
+        ENDSSH
+
+    - name: Verify deployment
+      shell: bash
+      run: |
+        echo "Verifying deployment..."
+        ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << ENDSSH
+          echo "Checking services..."
+          systemctl status nginx --no-pager -l
+          systemctl status php${{ inputs.php.version }}-fpm --no-pager -l
+          systemctl status mysql --no-pager -l
+          
+          echo ""
+          echo "Deployment verification complete!"
+          echo ""
+          echo "========================================="
+          echo "  VentureX ERP & CRM Deployed!"
+          echo "========================================="
+          echo "  URL: https://${{ inputs.domain }}"
+          echo "  Admin: demo_admin@example.com"
+          echo "  Password: Demo_Admin_2026!"
+          echo "========================================="
+        ENDSSH
