@@ -138,10 +138,11 @@ Change this password immediately on a production deployment.
 ### First 10 minutes in the product
 
 1. Open **Help → Getting Started** for the guided product tour.
-2. Open **AI Center → Enterprise RAG → Open the pipeline tour** to see all 80 pipelines.
-3. Index a domain (for example Finance) and ask: *"Which invoices are more than 30 days overdue?"*
-4. Review the answer's sources, confidence and latency, then act in the module.
-5. Invite your team and assign roles.
+2. Open the floating **Product guide** (bottom-right on every page) for the introduction and a searchable list of all 80 RAG pipelines, plus questions matched to the page you are on.
+3. Open **AI Center → Enterprise RAG → Open the pipeline tour** to see all 80 pipelines.
+4. Index a domain (for example Finance) and ask: *"Which invoices are more than 30 days overdue?"*
+5. Review the answer's sources, confidence and latency, then act in the module.
+6. Invite your team and assign roles.
 
 ---
 
@@ -159,6 +160,7 @@ Change this password immediately on a production deployment.
 ### What makes it different
 
 - **80 focused RAG pipelines**, not one generic chatbot — each pipeline knows its domain and source records.
+- **Guided from inside the product** — a floating Product guide on every page carries the introduction, all 80 pipelines and questions matched to the current screen.
 - **Local-first retrieval** — embeddings and similarity run on your server; no external vector database required.
 - **Explainable answers** — every response includes sources, confidence and latency.
 - **Human approval stays in control** — purchases, payments, exports and permission changes are never autonomous.
