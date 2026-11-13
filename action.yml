@@ -6,20 +6,6 @@ branding:
   icon: 'package'
   color: 'blue'
 
-pricing:
-  - name: 'Single'
-    description: 'Deploy to 1 server - Limited features, AI included, 5-day free AI trial'
-    price: 89.99
-    billing: monthly
-  - name: 'Professional'
-    description: 'Deploy to 5 servers - Full business features, priority support'
-    price: 150.22
-    billing: monthly
-  - name: 'Enterprise'
-    description: 'Unlimited servers - Full updates for company/big business, dedicated support. Use code SAVE29 for $29 off'
-    price: 350
-    billing: monthly
-
 inputs:
   server-host:
     description: 'Your server hostname or IP address'
@@ -56,11 +42,7 @@ inputs:
   php-version:
     description: 'PHP version to install'
     required: false
-    default: '8.3'
-  use-docker:
-    description: 'Use Docker for deployment (true/false)'
-    required: false
-    default: 'false'
+    default: '8.4'
 
 runs:
   using: 'composite'
@@ -136,38 +118,48 @@ runs:
       run: |
         ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << ENDSSH
           echo "Downloading VentureX ERP & CRM..."
+          mkdir -p ${{ inputs.install-path }}
           cd ${{ inputs.install-path }}
-          
+
           # Clone the repository
           git clone https://github.com/SHIVAM73566/VentureX-ERP-CRM.git venturex-erp
           cd venturex-erp
-          
+
           echo "Installing PHP dependencies..."
           composer install --no-dev --optimize-autoloader
-          
+
           echo "Installing Node dependencies..."
           npm install
           npm run build
-          
+
           echo "Configuring environment..."
           cp .env.example .env
           php artisan key:generate
-          
-          # Update .env with database credentials
+
+          # Update .env with deployment values
+          sed -i "s|APP_ENV=.*|APP_ENV=production|" .env
+          sed -i "s|APP_DEBUG=.*|APP_DEBUG=false|" .env
+          sed -i "s|APP_URL=.*|APP_URL=https://${{ inputs.domain }}|" .env
           sed -i "s/DB_DATABASE=.*/DB_DATABASE=${{ inputs.db-name }}/" .env
           sed -i "s/DB_USERNAME=.*/DB_USERNAME=${{ inputs.db-user }}/" .env
           sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=${{ inputs.db-password }}/" .env
-          
+
           echo "Running database migrations..."
           php artisan migrate --force
-          
+
           echo "Seeding demo data..."
           php artisan db:seed --force
-          
+
+          echo "Linking storage and caching configuration..."
+          php artisan storage:link || true
+          php artisan config:cache
+          php artisan route:cache
+          php artisan view:cache
+
           echo "Setting permissions..."
           chown -R www-data:www-data storage bootstrap/cache
           chmod -R 775 storage bootstrap/cache
-          
+
           echo "VentureX ERP deployed successfully!"
         ENDSSH
 
@@ -189,7 +181,7 @@ runs:
               }
               
               location ~ \.php\$ {
-                  fastcgi_pass unix:/var/run/php/php${{ inputs.php.version }}-fpm.sock;
+                  fastcgi_pass unix:/var/run/php/php${{ inputs.php-version }}-fpm.sock;
                   fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
                   include fastcgi_params;
               }
@@ -229,7 +221,7 @@ runs:
         ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << ENDSSH
           echo "Checking services..."
           systemctl status nginx --no-pager -l
-          systemctl status php${{ inputs.php.version }}-fpm --no-pager -l
+          systemctl status php${{ inputs.php-version }}-fpm --no-pager -l
           systemctl status mysql --no-pager -l
           
           echo ""

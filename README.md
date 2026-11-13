@@ -1,35 +1,32 @@
-# VentureX ERP & CRM - GitHub Action
+# VentureX ERP & CRM — GitHub Action
 
-Deploy VentureX ERP & CRM - AI-Powered Business Operating System to your server in one click.
+Deploy **VentureX ERP & CRM** — an AI-powered business operating system — to your own Ubuntu server in one workflow run.
 
 [![GitHub Marketplace](https://img.shields.io/badge/Available%20on-GitHub%20Marketplace-blue)](https://github.com/marketplace/actions/venturex-erp-crm-deploy)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-[![Price](https://img.shields.io/badge/Price-%2489.99%2Fmonth-orange)](https://github.com/marketplace/actions/venturex-erp-crm-deploy)
 
-## Pricing Plans
+> **What it is:** one Laravel application that combines CRM, ERP, procurement, inventory, finance, logistics and 80 enterprise RAG (retrieval-augmented generation) pipelines. This action installs it end-to-end: PHP, MySQL, Nginx, Composer, Node.js, migrations, demo data and a free Let's Encrypt certificate.
 
-| Plan | Price | Features |
-|------|-------|----------|
-| **Single** | $89.99/month | Deploy to 1 server - Limited features, AI included, 5-day free AI trial |
-| **Professional** | $150.22/month | Deploy to 5 servers - Full business features, priority support |
-| **Enterprise** | $350/month | Unlimited servers - Full updates for company/big business, dedicated support |
+---
 
-> **Enterprise Discount:** Use code `SAVE29` at checkout for $29 off your first month!
+## What this action does
 
-## What This Action Does
+| Step | Result |
+|---|---|
+| Installs dependencies | PHP 8.4 + required extensions, MySQL, Nginx, Node.js 20, Composer |
+| Creates the database | MySQL database and user with the credentials you provide |
+| Deploys the app | Clones `VentureX-ERP-CRM`, installs Composer/npm packages, builds assets |
+| Configures the environment | Generates `APP_KEY`, sets `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL`, database credentials |
+| Prepares the database | Runs migrations and seeds demo/master data |
+| Optimises | Storage link, config/route/view caches |
+| Serves it | Nginx virtual host + optional HTTPS via Let's Encrypt |
+| Verifies | Checks Nginx, PHP-FPM and MySQL are running and prints the login URL |
 
-This GitHub Action automatically deploys VentureX ERP & CRM to your server. It:
+---
 
-- Installs all required dependencies (PHP 8.3, MySQL, Nginx, Node.js)
-- Sets up the database
-- Deploys the application
-- Configures Nginx web server
-- Enables HTTPS with Let's Encrypt SSL
-- Seeds demo data
+## Quick start
 
-## Quick Start
-
-Add this to your `.github/workflows/deploy.yml`:
+Add this to `.github/workflows/deploy.yml` in your repository:
 
 ```yaml
 name: Deploy VentureX ERP
@@ -44,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Deploy VentureX ERP
-        uses: SHIVAM73566/venturex-deploy-action@main
+        uses: SHIVAM73566/venturex-deploy-action@v1
         with:
           server-host: ${{ secrets.SERVER_HOST }}
           server-user: ${{ secrets.SERVER_USER }}
@@ -55,118 +52,143 @@ jobs:
           db-password: ${{ secrets.DB_PASSWORD }}
 ```
 
-## Inputs
+### Quick examples
 
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `server-host` | Yes | - | Your server hostname or IP |
-| `server-user` | No | `root` | SSH username |
-| `server-key` | Yes | - | SSH private key |
-| `server-port` | No | `22` | SSH port |
-| `domain` | Yes | - | Your domain name |
-| `db-name` | No | `venturex_erp` | MySQL database name |
-| `db-user` | No | `venturex_user` | MySQL username |
-| `db-password` | Yes | - | MySQL password |
-| `install-path` | No | `/var/www/html` | Installation path |
-| `php-version` | No | `8.3` | PHP version |
-| `use-docker` | No | `false` | Use Docker deployment |
-
-## Setup GitHub Secrets
-
-Go to your repo → Settings → Secrets and variables → Actions → New repository secret
-
-| Secret Name | Value |
-|-------------|-------|
-| `SERVER_HOST` | Your server IP (e.g., 192.168.1.100) |
-| `SERVER_USER` | SSH username (e.g., root) |
-| `SERVER_KEY` | Your SSH private key |
-| `DOMAIN` | Your domain (e.g., erp.yourdomain.com) |
-| `DB_PASSWORD` | MySQL password |
-
-## Example: Deploy to DigitalOcean
+**1. Deploy to a fresh DigitalOcean droplet**
 
 ```yaml
-name: Deploy to DigitalOcean
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy VentureX ERP
-        uses: SHIVAM73566/venturex-deploy-action@main
+      - uses: SHIVAM73566/venturex-deploy-action@v1
         with:
           server-host: ${{ secrets.DO_SERVER_IP }}
           server-user: root
           server-key: ${{ secrets.DO_SSH_KEY }}
           domain: erp.yourdomain.com
-          db-name: venturex_erp
-          db-user: venturex_user
           db-password: ${{ secrets.DB_PASSWORD }}
 ```
 
-## Example: Deploy with Docker
+**2. Deploy to a custom SSH port with a non-root user**
 
 ```yaml
-name: Deploy with Docker
+      - uses: SHIVAM73566/venturex-deploy-action@v1
+        with:
+          server-host: erp.yourdomain.com
+          server-user: deploy
+          server-key: ${{ secrets.SERVER_KEY }}
+          server-port: '2222'
+          domain: erp.yourdomain.com
+          db-password: ${{ secrets.DB_PASSWORD }}
+```
 
-on:
-  push:
-    branches: [main]
+**3. Pin a PHP version and install path**
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy VentureX ERP
-        uses: SHIVAM73566/venturex-deploy-action@main
+```yaml
+      - uses: SHIVAM73566/venturex-deploy-action@v1
         with:
           server-host: ${{ secrets.SERVER_HOST }}
           server-user: root
           server-key: ${{ secrets.SERVER_KEY }}
           domain: erp.yourdomain.com
-          db-name: venturex_erp
-          db-user: venturex_user
           db-password: ${{ secrets.DB_PASSWORD }}
-          use-docker: 'true'
+          php-version: '8.4'
+          install-path: /var/www/venturex
 ```
 
-## What Gets Installed
+---
 
-- PHP 8.3 with all required extensions
-- MySQL 8.0
-- Nginx web server
-- Node.js 20
-- Composer 2
-- Let's Encrypt SSL certificate
+## Inputs
 
-## Post-Deployment
+| Input | Required | Default | Description |
+|---|---|---|---|
+| `server-host` | Yes | — | Server hostname or IP |
+| `server-user` | No | `root` | SSH username |
+| `server-key` | Yes | — | SSH private key |
+| `server-port` | No | `22` | SSH port |
+| `domain` | Yes | — | Domain name pointed at the server |
+| `db-name` | No | `venturex_erp` | MySQL database name |
+| `db-user` | No | `venturex_user` | MySQL username |
+| `db-password` | Yes | — | MySQL password |
+| `install-path` | No | `/var/www/html` | Parent installation directory |
+| `php-version` | No | `8.4` | PHP version to install |
 
-After deployment, your VentureX ERP & CRM will be available at:
+## Required secrets
 
-```
-https://yourdomain.com
-```
+Go to **Settings → Secrets and variables → Actions → New repository secret**:
 
-**Demo Login:**
-- Email: demo_admin@example.com
-- Password: Demo_Admin_2026!
+| Secret | Value |
+|---|---|
+| `SERVER_HOST` | Server IP or hostname |
+| `SERVER_USER` | SSH username |
+| `SERVER_KEY` | Private SSH key with access to the server |
+| `DOMAIN` | Domain pointing at the server |
+| `DB_PASSWORD` | MySQL password to create |
+
+---
+
+## After deployment
+
+Your instance is available at `https://yourdomain.com`.
+
+**Demo login**
+
+- Email: `demo_admin@example.com`
+- Password: `Demo_Admin_2026!`
+
+Change this password immediately on a production deployment.
+
+### First 10 minutes in the product
+
+1. Open **Help → Getting Started** for the guided product tour.
+2. Open **AI Center → Enterprise RAG → Open the pipeline tour** to see all 80 pipelines.
+3. Index a domain (for example Finance) and ask: *"Which invoices are more than 30 days overdue?"*
+4. Review the answer's sources, confidence and latency, then act in the module.
+5. Invite your team and assign roles.
+
+---
+
+## How companies use it
+
+| Company | Typical use |
+|---|---|
+| Small business (5–50) | Owner runs sales, stock, invoices and cash from one login; no separate CRM/ERP subscriptions. |
+| Wholesale distributor | Supplier reliability, reorder planning and dead-stock reduction from live stock and PO data. |
+| Manufacturer | Material requirement forecasts, lead-time tracking and landed-cost control. |
+| Importer / exporter | HS-code guidance, demurrage risk, freight benchmarking and customs-document readiness. |
+| Services agency | Pipeline, quote conversion and receivables insight. |
+| Group / enterprise | Company-scoped data, role permissions, audit logs and executive scorecards. |
+
+### What makes it different
+
+- **80 focused RAG pipelines**, not one generic chatbot — each pipeline knows its domain and source records.
+- **Local-first retrieval** — embeddings and similarity run on your server; no external vector database required.
+- **Explainable answers** — every response includes sources, confidence and latency.
+- **Human approval stays in control** — purchases, payments, exports and permission changes are never autonomous.
+- **One codebase, full stack** — CRM + ERP + AI + logistics + finance, self-hosted on your infrastructure.
+
+---
 
 ## Requirements
 
-- Ubuntu 20.04+ server
-- Root SSH access
-- Domain pointed to your server IP
+- Ubuntu 20.04+ (22.04/24.04 recommended)
+- Root or passwordless-sudo SSH access
+- A domain pointed at the server IP
+- Ports 80 and 443 open
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `Permission denied (publickey)` | Check `SERVER_KEY` is the full private key including header/footer. |
+| Nginx 502 | Confirm PHP-FPM is installed for the chosen `php-version`. |
+| Blank page after deploy | Check `storage/logs/laravel.log` and file permissions on `storage` / `bootstrap/cache`. |
+| Certificate failed | Confirm DNS already points at the server, then re-run the workflow. |
 
 ## Support
 
-- Documentation: /documentation/
-- Issues: GitHub Issues
-- Email: support@venturexerp.com
+- Product documentation: <https://github.com/SHIVAM73566/VentureX-ERP-CRM/tree/main/documentation>
+- Getting Started: <https://github.com/SHIVAM73566/VentureX-ERP-CRM/blob/main/documentation/GETTING-STARTED.md>
+- 80-pipeline RAG guide: <https://github.com/SHIVAM73566/VentureX-ERP-CRM/blob/main/documentation/RAG-GUIDE.md>
+- Issues: <https://github.com/SHIVAM73566/VentureX-ERP-CRM/issues>
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License — see [LICENSE](LICENSE) for details.
