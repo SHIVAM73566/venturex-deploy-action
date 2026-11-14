@@ -26,6 +26,29 @@ Deploy **VentureX ERP & CRM** — an AI-powered business operating system — to
 
 ## Quick start
 
+## Platform Highlights
+
+The action deploys the full VentureX ERP & CRM platform, including:
+
+- **HR suite** - employee directory, attendance, leave, payroll runs, performance
+  reviews and automated onboarding.
+- **AERO X Agentic Engine** - autonomous, auditable rules that draft purchase
+  orders on low stock, flag overdue invoices, self-assign support tickets and
+  seed onboarding checklists. Every run is transactional and rolled back on
+  failure.
+- **84 RAG pipelines** across seven domains (CRM, procurement, inventory,
+  finance, logistics, executive and HR) with sources, confidence and latency.
+- **Key-only AI onboarding** - paste a key for NVIDIA NIM, Google Gemini, OpenAI
+  or Anthropic Claude; endpoints and models are wired server-side.
+- **AERO X Super Intelligence Brain** - AES-256 encrypted credentials, prompt/PII
+  sanitisation, threat detection, rate limiting and audit telemetry.
+- **Invoice branding** - upload a logo and set accent colour, PDF typography,
+  tax/registration IDs, footer, terms and watermark from Settings.
+
+---
+
+## Quick start
+
 Add this to `.github/workflows/deploy.yml` in your repository:
 
 ```yaml
