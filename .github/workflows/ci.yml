@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint action.yml with actionlint
+        uses: raven-actions/actionlint@v2
+
+      - name: Validate action.yml is parseable YAML
+        run: |
+          python3 -c "import yaml,sys; yaml.safe_load(open('action.yml')); print('action.yml: YAML parse OK')"
+
+      - name: Check for forbidden patterns
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          import sys
+
+          forbidden = [
+              'inputs.php.version',
+              'Demo_Admin_2026',
+              'support@venturexerp.com',
+          ]
+
+          with open('action.yml', encoding='utf-8') as handle:
+              content = handle.read()
+          with open('README.md', encoding='utf-8') as handle:
+              readme = handle.read()
+
+          for pattern in forbidden:
+              if pattern in content or pattern in readme:
+                  print(f'FORBIDDEN PATTERN FOUND: {pattern}')
+                  sys.exit(1)
+
+          print('Forbidden pattern check passed.')
+          PYTHON

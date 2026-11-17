@@ -1,5 +1,5 @@
 name: 'VentureX ERP & CRM Deploy'
-description: 'Deploy VentureX ERP & CRM - AI-Powered Business Operating System to your server in one click'
+description: 'Deploy VentureX ERP & CRM to an Ubuntu server over SSH with Nginx, PHP 8.4, MySQL, a queue worker, and a scheduler.'
 author: 'SHIVAM73566'
 
 branding:
@@ -8,230 +8,740 @@ branding:
 
 inputs:
   server-host:
-    description: 'Your server hostname or IP address'
+    description: 'Server hostname or IP address.'
     required: true
   server-user:
-    description: 'SSH username for your server'
-    required: true
+    description: 'SSH username. Use root or a user with passwordless sudo.'
+    required: false
     default: 'root'
   server-key:
-    description: 'SSH private key for authentication'
+    description: 'SSH private key used to authenticate to the server.'
     required: true
   server-port:
-    description: 'SSH port number'
+    description: 'SSH port number.'
     required: false
     default: '22'
   domain:
-    description: 'Your domain name (e.g., example.com)'
+    description: 'Domain name that points at the server (for example, erp.example.com).'
     required: true
+  ssl-email:
+    description: 'Email address for Let''s Encrypt. Leave empty to skip TLS and serve HTTP only.'
+    required: false
+    default: ''
   db-name:
-    description: 'MySQL database name'
-    required: true
+    description: 'MySQL database name.'
+    required: false
     default: 'venturex_erp'
   db-user:
-    description: 'MySQL database username'
-    required: true
+    description: 'MySQL database username.'
+    required: false
     default: 'venturex_user'
   db-password:
-    description: 'MySQL database password'
+    description: 'MySQL database password. Store it in GitHub Secrets.'
     required: true
   install-path:
-    description: 'Installation path on server'
+    description: 'Directory on the server that will contain the application checkout.'
     required: false
-    default: '/var/www/html'
+    default: '/var/www/venturex'
   php-version:
-    description: 'PHP version to install'
+    description: 'PHP version to install. The application requires PHP 8.4 or newer.'
     required: false
     default: '8.4'
+  app-env:
+    description: 'Laravel APP_ENV value.'
+    required: false
+    default: 'production'
+  run-seeders:
+    description: 'Run demo data seeders (true/false). Demo seeding is disabled by default.'
+    required: false
+    default: 'false'
+  known-hosts:
+    description: 'Pinned SSH host key line(s) written to ~/.ssh/known_hosts. If empty, ssh-keyscan is used and the host key is not pinned.'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
   steps:
     - name: Validate inputs
       shell: bash
+      env:
+        SERVER_HOST: ${{ inputs['server-host'] }}
+        SERVER_USER: ${{ inputs['server-user'] }}
+        SERVER_KEY: ${{ inputs['server-key'] }}
+        SERVER_PORT: ${{ inputs['server-port'] }}
+        DOMAIN: ${{ inputs['domain'] }}
+        SSL_EMAIL: ${{ inputs['ssl-email'] }}
+        DB_NAME: ${{ inputs['db-name'] }}
+        DB_USER: ${{ inputs['db-user'] }}
+        DB_PASSWORD: ${{ inputs['db-password'] }}
+        INSTALL_PATH: ${{ inputs['install-path'] }}
+        PHP_VERSION: ${{ inputs['php-version'] }}
+        APP_ENV_INPUT: ${{ inputs['app-env'] }}
+        RUN_SEEDERS: ${{ inputs['run-seeders'] }}
+        KNOWN_HOSTS: ${{ inputs['known-hosts'] }}
       run: |
-        echo "Validating deployment configuration..."
-        if [ -z "${{ inputs.server-host }}" ]; then
-          echo "Error: server-host is required"
+        set -euo pipefail
+
+        fail() {
+          echo "::error::$*" >&2
+          exit 1
+        }
+
+        [ -n "${SERVER_HOST:-}" ] || fail "server-host is required."
+        [ -n "${SERVER_KEY:-}" ] || fail "server-key is required."
+        [ -n "${DOMAIN:-}" ] || fail "domain is required."
+        [ -n "${DB_PASSWORD:-}" ] || fail "db-password is required."
+
+        case "$SERVER_HOST" in
+          *[[:space:]]*) fail "server-host must not contain whitespace." ;;
+        esac
+
+        if ! [[ "$SERVER_USER" =~ ^[A-Za-z0-9._-]+$ ]]; then
+          fail "server-user contains unsupported characters."
+        fi
+
+        if ! [[ "$SERVER_PORT" =~ ^[0-9]+$ ]] || [ "$SERVER_PORT" -lt 1 ] || [ "$SERVER_PORT" -gt 65535 ]; then
+          fail "server-port must be an integer between 1 and 65535."
+        fi
+
+        if ! [[ "$DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
+          fail "domain must be a valid hostname (for example, erp.example.com)."
+        fi
+
+        if [ -n "${SSL_EMAIL:-}" ] && ! [[ "$SSL_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
+          fail "ssl-email must be a valid email address, or empty to skip TLS."
+        fi
+
+        if ! [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]]; then
+          fail "db-name may only contain letters, numbers, and underscores."
+        fi
+
+        if ! [[ "$DB_USER" =~ ^[A-Za-z0-9_]+$ ]]; then
+          fail "db-user may only contain letters, numbers, and underscores."
+        fi
+
+        if ! [[ "$INSTALL_PATH" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+          fail "install-path must be an absolute path with no spaces."
+        fi
+
+        INSTALL_PATH="${INSTALL_PATH%/}"
+        if [ -z "$INSTALL_PATH" ] || [ "$INSTALL_PATH" = "/" ]; then
+          fail "install-path must be a directory below /, for example /var/www/venturex."
+        fi
+
+        case "$INSTALL_PATH" in
+          *..*) fail "install-path must not contain '..'." ;;
+        esac
+
+        case "$INSTALL_PATH" in
+          /|/bin|/boot|/dev|/etc|/home|/lib|/lib32|/lib64|/media|/mnt|/opt|/proc|/root|/run|/sbin|/srv|/sys|/tmp|/usr|/var|/var/www)
+            fail "install-path must be a dedicated directory, not ${INSTALL_PATH}."
+            ;;
+        esac
+
+        if ! [[ "$PHP_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
+          fail "php-version must look like 8.4."
+        fi
+
+        PHP_MAJOR="${PHP_VERSION%%.*}"
+        PHP_MINOR="${PHP_VERSION#*.}"
+        if [ "$PHP_MAJOR" -lt 8 ] || { [ "$PHP_MAJOR" -eq 8 ] && [ "$PHP_MINOR" -lt 4 ]; }; then
+          fail "php-version ${PHP_VERSION} is unsupported. The application requires PHP 8.4 or newer."
+        fi
+
+        if ! [[ "$APP_ENV_INPUT" =~ ^[A-Za-z0-9_]+$ ]]; then
+          fail "app-env may only contain letters, numbers, and underscores."
+        fi
+
+        case "$RUN_SEEDERS" in
+          true|false) ;;
+          *) fail "run-seeders must be 'true' or 'false'." ;;
+        esac
+
+        echo "Input validation passed for ${DOMAIN} (PHP ${PHP_VERSION}, APP_ENV ${APP_ENV_INPUT})."
+        if [ "$RUN_SEEDERS" = "true" ]; then
+          echo "::warning::run-seeders=true. Demo users and sample data will be created."
+        fi
+
+    - name: Configure SSH
+      shell: bash
+      env:
+        SERVER_HOST: ${{ inputs['server-host'] }}
+        SERVER_KEY: ${{ inputs['server-key'] }}
+        SERVER_PORT: ${{ inputs['server-port'] }}
+        KNOWN_HOSTS: ${{ inputs['known-hosts'] }}
+      run: |
+        set -euo pipefail
+        umask 077
+
+        mkdir -p "$HOME/.ssh"
+        chmod 700 "$HOME/.ssh"
+
+        printf '%s\n' "$SERVER_KEY" > "$HOME/.ssh/deploy_key"
+        chmod 600 "$HOME/.ssh/deploy_key"
+
+        if [ -n "${KNOWN_HOSTS:-}" ]; then
+          printf '%s\n' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          echo "Using the pinned SSH host key supplied in known-hosts."
+        else
+          echo "::warning::known-hosts was not provided. The SSH host key will be discovered with ssh-keyscan and is NOT pinned, so this does not protect against a man-in-the-middle attack on the first connection. Provide known-hosts to pin the server key."
+          : > "$HOME/.ssh/known_hosts"
+          if ! ssh-keyscan -p "$SERVER_PORT" -H "$SERVER_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null; then
+            echo "::error::ssh-keyscan failed for $SERVER_HOST on port $SERVER_PORT."
+            exit 1
+          fi
+          if [ ! -s "$HOME/.ssh/known_hosts" ]; then
+            echo "::error::ssh-keyscan returned no host keys for $SERVER_HOST on port $SERVER_PORT."
+            exit 1
+          fi
+          chmod 600 "$HOME/.ssh/known_hosts"
+        fi
+
+    - name: Preflight server
+      shell: bash
+      env:
+        SERVER_HOST: ${{ inputs['server-host'] }}
+        SERVER_USER: ${{ inputs['server-user'] }}
+        SERVER_PORT: ${{ inputs['server-port'] }}
+      run: |
+        set -euo pipefail
+
+        SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -o IdentitiesOnly=yes -i "$HOME/.ssh/deploy_key" -p "$SERVER_PORT")
+
+        ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" 'bash -s' <<'REMOTE'
+        set -euo pipefail
+
+        if ! command -v apt-get >/dev/null 2>&1; then
+          echo "ERROR: this action only supports Debian/Ubuntu servers with apt-get. Detected an unsupported operating system." >&2
           exit 1
         fi
-        if [ -z "${{ inputs.domain }}" ]; then
-          echo "Error: domain is required"
-          exit 1
+
+        if [ "$(id -u)" -ne 0 ]; then
+          if ! command -v sudo >/dev/null 2>&1; then
+            echo "ERROR: the SSH user is not root and sudo is not installed. Use root or install sudo." >&2
+            exit 1
+          fi
+          if ! sudo -n true 2>/dev/null; then
+            echo "ERROR: the SSH user is not root and passwordless sudo is unavailable. Configure NOPASSWD sudo or use root." >&2
+            exit 1
+          fi
         fi
-        echo "Configuration validated successfully"
 
-    - name: Setup SSH connection
-      shell: bash
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ inputs.server-key }}" > ~/.ssh/deploy_key
-        chmod 600 ~/.ssh/deploy_key
-        ssh-keyscan -p ${{ inputs.server-port }} ${{ inputs.server-host }} >> ~/.ssh/known_hosts 2>/dev/null
-        echo "SSH connection configured"
-
-    - name: Install dependencies on server
-      shell: bash
-      run: |
-        ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << 'ENDSSH'
-          echo "Updating system packages..."
-          apt-get update -qq
-          
-          echo "Installing PHP ${{ inputs.php-version }}..."
-          apt-get install -y -qq software-properties-common
-          add-apt-repository -y ppa:ondrej/php
-          apt-get update -qq
-          apt-get install -y -qq php${{ inputs.php-version }}-cli php${{ inputs.php-version }}-mysql php${{ inputs.php-version }}-mbstring php${{ inputs.php-version }}-xml php${{ inputs.php-version }}-curl php${{ inputs.php-version }}-gd php${{ inputs.php-version }}-zip php${{ inputs.php-version }}-bcmath php${{ inputs.php-version }}-tokenizer php${{ inputs.php-version }}-fileinfo
-          
-          echo "Installing MySQL..."
-          apt-get install -y -qq mysql-server
-          
-          echo "Installing Composer..."
-          curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-          
-          echo "Installing Node.js 20..."
-          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-          apt-get install -y -qq nodejs
-          
-          echo "Installing Nginx..."
-          apt-get install -y -qq nginx
-          
-          echo "All dependencies installed successfully"
-        ENDSSH
-
-    - name: Setup database
-      shell: bash
-      run: |
-        ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << ENDSSH
-          echo "Creating MySQL database and user..."
-          mysql -u root << MYSQL
-            CREATE DATABASE IF NOT EXISTS ${{ inputs.db-name }};
-            CREATE USER IF NOT EXISTS '${{ inputs.db-user }}'@'localhost' IDENTIFIED BY '${{ inputs.db-password }}';
-            GRANT ALL PRIVILEGES ON ${{ inputs.db-name }}.* TO '${{ inputs.db-user }}'@'localhost';
-            FLUSH PRIVILEGES;
-          MYSQL
-          echo "Database configured successfully"
-        ENDSSH
+        echo "Preflight checks passed: apt-get is available and privilege escalation works."
+        REMOTE
 
     - name: Deploy VentureX ERP
       shell: bash
+      env:
+        SERVER_HOST: ${{ inputs['server-host'] }}
+        SERVER_USER: ${{ inputs['server-user'] }}
+        SERVER_PORT: ${{ inputs['server-port'] }}
+        DOMAIN: ${{ inputs['domain'] }}
+        SSL_EMAIL: ${{ inputs['ssl-email'] }}
+        DB_NAME: ${{ inputs['db-name'] }}
+        DB_USER: ${{ inputs['db-user'] }}
+        DB_PASSWORD: ${{ inputs['db-password'] }}
+        INSTALL_PATH: ${{ inputs['install-path'] }}
+        PHP_VERSION: ${{ inputs['php-version'] }}
+        APP_ENV_INPUT: ${{ inputs['app-env'] }}
+        RUN_SEEDERS: ${{ inputs['run-seeders'] }}
       run: |
-        ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << ENDSSH
-          echo "Downloading VentureX ERP & CRM..."
-          mkdir -p ${{ inputs.install-path }}
-          cd ${{ inputs.install-path }}
+        set -euo pipefail
+        umask 077
 
-          # Clone the repository
-          git clone https://github.com/SHIVAM73566/VentureX-ERP-CRM.git venturex-erp
-          cd venturex-erp
+        INSTALL_PATH="${INSTALL_PATH%/}"
+        CONFIG_FILE="$RUNNER_TEMP/venturex-config.b64"
+        REMOTE_SCRIPT="$RUNNER_TEMP/venturex-deploy.sh"
+        : > "$CONFIG_FILE"
 
-          echo "Installing PHP dependencies..."
-          composer install --no-dev --optimize-autoloader
+        emit() {
+          printf '%s %s\n' "$1" "$(printf '%s' "$2" | base64 | tr -d '\n')" >> "$CONFIG_FILE"
+        }
 
-          echo "Installing Node dependencies..."
-          npm install
-          npm run build
+        emit DOMAIN "$DOMAIN"
+        emit SSL_EMAIL "$SSL_EMAIL"
+        emit DB_NAME "$DB_NAME"
+        emit DB_USER "$DB_USER"
+        emit DB_PASSWORD "$DB_PASSWORD"
+        emit INSTALL_PATH "$INSTALL_PATH"
+        emit PHP_VERSION "$PHP_VERSION"
+        emit APP_ENV "$APP_ENV_INPUT"
+        emit RUN_SEEDERS "$RUN_SEEDERS"
 
-          echo "Configuring environment..."
-          cp .env.example .env
-          php artisan key:generate
+        cat > "$REMOTE_SCRIPT" <<'REMOTE'
+        set -euo pipefail
+        umask 022
 
-          # Update .env with deployment values
-          sed -i "s|APP_ENV=.*|APP_ENV=production|" .env
-          sed -i "s|APP_DEBUG=.*|APP_DEBUG=false|" .env
-          sed -i "s|APP_URL=.*|APP_URL=https://${{ inputs.domain }}|" .env
-          sed -i "s/DB_DATABASE=.*/DB_DATABASE=${{ inputs.db-name }}/" .env
-          sed -i "s/DB_USERNAME=.*/DB_USERNAME=${{ inputs.db-user }}/" .env
-          sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=${{ inputs.db-password }}/" .env
+        CONFIG_FILE="$(mktemp)"
+        APPLY_ENV_PHP="$(mktemp)"
+        ENV_CONFIG_FILE=""
+        NGINX_TMP="$(mktemp)"
+        QUEUE_TMP="$(mktemp)"
+        CRON_TMP="$(mktemp)"
 
-          echo "Running database migrations..."
-          php artisan migrate --force
+        cleanup() {
+          rm -f "$CONFIG_FILE" "$APPLY_ENV_PHP" "$NGINX_TMP" "$QUEUE_TMP" "$CRON_TMP"
+          if [ -n "$ENV_CONFIG_FILE" ]; then
+            rm -f "$ENV_CONFIG_FILE"
+          fi
+          rm -f "$0" 2>/dev/null || true
+        }
+        trap cleanup EXIT
 
-          echo "Seeding demo data..."
-          php artisan db:seed --force
+        cat > "$CONFIG_FILE"
 
-          echo "Linking storage and caching configuration..."
-          php artisan storage:link || true
-          php artisan config:cache
-          php artisan route:cache
-          php artisan view:cache
+        DOMAIN=""
+        SSL_EMAIL=""
+        DB_NAME=""
+        DB_USER=""
+        DB_PASSWORD=""
+        INSTALL_PATH=""
+        PHP_VERSION=""
+        APP_ENV=""
+        RUN_SEEDERS=""
 
-          echo "Setting permissions..."
-          chown -R www-data:www-data storage bootstrap/cache
-          chmod -R 775 storage bootstrap/cache
+        while read -r config_key config_value; do
+          [ -n "$config_key" ] || continue
+          decoded_value="$(printf '%s' "$config_value" | base64 -d)"
+          case "$config_key" in
+            DOMAIN) DOMAIN="$decoded_value" ;;
+            SSL_EMAIL) SSL_EMAIL="$decoded_value" ;;
+            DB_NAME) DB_NAME="$decoded_value" ;;
+            DB_USER) DB_USER="$decoded_value" ;;
+            DB_PASSWORD) DB_PASSWORD="$decoded_value" ;;
+            INSTALL_PATH) INSTALL_PATH="$decoded_value" ;;
+            PHP_VERSION) PHP_VERSION="$decoded_value" ;;
+            APP_ENV) APP_ENV="$decoded_value" ;;
+            RUN_SEEDERS) RUN_SEEDERS="$decoded_value" ;;
+            *) echo "WARNING: ignoring unknown configuration key: $config_key" >&2 ;;
+          esac
+        done < "$CONFIG_FILE"
 
-          echo "VentureX ERP deployed successfully!"
-        ENDSSH
+        [ -n "$DOMAIN" ] || { echo "ERROR: missing DOMAIN configuration." >&2; exit 1; }
+        [ -n "$DB_NAME" ] || { echo "ERROR: missing DB_NAME configuration." >&2; exit 1; }
+        [ -n "$DB_USER" ] || { echo "ERROR: missing DB_USER configuration." >&2; exit 1; }
+        [ -n "$DB_PASSWORD" ] || { echo "ERROR: missing DB_PASSWORD configuration." >&2; exit 1; }
+        [ -n "$INSTALL_PATH" ] || { echo "ERROR: missing INSTALL_PATH configuration." >&2; exit 1; }
+        [ -n "$PHP_VERSION" ] || { echo "ERROR: missing PHP_VERSION configuration." >&2; exit 1; }
+        [ -n "$APP_ENV" ] || { echo "ERROR: missing APP_ENV configuration." >&2; exit 1; }
+        [ -n "$RUN_SEEDERS" ] || { echo "ERROR: missing RUN_SEEDERS configuration." >&2; exit 1; }
 
-    - name: Configure Nginx
-      shell: bash
-      run: |
-        ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << ENDSSH
-          echo "Configuring Nginx..."
-          cat > /etc/nginx/sites-available/venturex << NGINX
-          server {
-              listen 80;
-              server_name ${{ inputs.domain }};
-              root ${{ inputs.install-path }}/venturex-erp/public;
-              
-              index index.php index.html;
-              
-              location / {
-                  try_files \$uri \$uri/ /index.php?\$query_string;
-              }
-              
-              location ~ \.php\$ {
-                  fastcgi_pass unix:/var/run/php/php${{ inputs.php-version }}-fpm.sock;
-                  fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
-                  include fastcgi_params;
-              }
-              
-              location ~ /\.(?!well-known).* {
-                  deny all;
-              }
-          }
-          NGINX
-          
-          ln -sf /etc/nginx/sites-available/venturex /etc/nginx/sites-enabled/
-          rm -f /etc/nginx/sites-enabled/default
-          
-          nginx -t
-          systemctl reload nginx
-          
-          echo "Nginx configured successfully"
-        ENDSSH
+        APP_DIR="${INSTALL_PATH}/venturex-erp"
+        case "$APP_DIR" in
+          *..*) echo "ERROR: install-path must not contain '..'." >&2; exit 1 ;;
+        esac
 
-    - name: Enable HTTPS with Let's Encrypt
-      shell: bash
-      run: |
-        ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << ENDSSH
-          echo "Installing Certbot..."
-          apt-get install -y -qq certbot python3-certbot-nginx
-          
-          echo "Obtaining SSL certificate..."
-          certbot --nginx -d ${{ inputs.domain }} --non-interactive --agree-tos --email admin@${{ inputs.domain }}
-          
-          echo "SSL certificate installed successfully"
-        ENDSSH
+        CURRENT_USER="$(id -un)"
+        CURRENT_GROUP="$(id -gn)"
 
-    - name: Verify deployment
-      shell: bash
-      run: |
-        echo "Verifying deployment..."
-        ssh -i ~/.ssh/deploy_key -p ${{ inputs.server-port }} ${{ inputs.server-user }}@${{ inputs.server-host }} << ENDSSH
-          echo "Checking services..."
-          systemctl status nginx --no-pager -l
-          systemctl status php${{ inputs.php-version }}-fpm --no-pager -l
-          systemctl status mysql --no-pager -l
-          
-          echo ""
-          echo "Deployment verification complete!"
-          echo ""
-          echo "========================================="
-          echo "  VentureX ERP & CRM Deployed!"
-          echo "========================================="
-          echo "  URL: https://${{ inputs.domain }}"
-          echo "  Admin: demo_admin@example.com"
-          echo "  Password: Demo_Admin_2026!"
-          echo "========================================="
-        ENDSSH
+        if [ "$(id -u)" -eq 0 ]; then
+          SUDO=()
+        else
+          if ! sudo -n true 2>/dev/null; then
+            echo "ERROR: the SSH user is not root and passwordless sudo is unavailable. Configure NOPASSWD sudo or use root." >&2
+            exit 1
+          fi
+          SUDO=(sudo -n)
+        fi
+
+        export DEBIAN_FRONTEND=noninteractive
+
+        if ! command -v apt-get >/dev/null 2>&1; then
+          echo "ERROR: unsupported operating system. This action requires Debian/Ubuntu with apt-get." >&2
+          exit 1
+        fi
+
+        echo "==> Installing system packages"
+        "${SUDO[@]}" apt-get update -y
+        "${SUDO[@]}" apt-get install -y software-properties-common ca-certificates curl gnupg lsb-release unzip git cron
+        "${SUDO[@]}" add-apt-repository -y ppa:ondrej/php
+        "${SUDO[@]}" apt-get update -y
+        "${SUDO[@]}" apt-get install -y \
+          "php${PHP_VERSION}-cli" \
+          "php${PHP_VERSION}-common" \
+          "php${PHP_VERSION}-fpm" \
+          "php${PHP_VERSION}-mysql" \
+          "php${PHP_VERSION}-mbstring" \
+          "php${PHP_VERSION}-xml" \
+          "php${PHP_VERSION}-curl" \
+          "php${PHP_VERSION}-gd" \
+          "php${PHP_VERSION}-zip" \
+          "php${PHP_VERSION}-bcmath" \
+          "php${PHP_VERSION}-intl" \
+          "php${PHP_VERSION}-sqlite3" \
+          mysql-server nginx certbot python3-certbot-nginx
+
+        PHP_BIN="/usr/bin/php${PHP_VERSION}"
+        if [ ! -x "$PHP_BIN" ]; then
+          echo "ERROR: PHP binary ${PHP_BIN} was not installed." >&2
+          exit 1
+        fi
+
+        echo "==> Verifying required PHP extensions"
+        for extension in mbstring xml curl gd zip bcmath intl fileinfo tokenizer pdo_mysql sqlite3 dom simplexml; do
+          if ! "$PHP_BIN" -m | grep -qix "$extension"; then
+            echo "ERROR: required PHP extension '${extension}' is not loaded by ${PHP_BIN}." >&2
+            exit 1
+          fi
+        done
+
+        echo "==> Installing Composer"
+        if ! command -v composer >/dev/null 2>&1; then
+          curl -fsSL https://getcomposer.org/installer -o /tmp/composer-setup.php
+          "${SUDO[@]}" "$PHP_BIN" /tmp/composer-setup.php --install-dir=/usr/local/bin --filename=composer
+          rm -f /tmp/composer-setup.php
+        fi
+        COMPOSER_BIN="$(command -v composer)"
+
+        echo "==> Installing Node.js 22"
+        curl -fsSL https://deb.nodesource.com/setup_22.x -o /tmp/nodesource_setup.sh
+        "${SUDO[@]}" bash /tmp/nodesource_setup.sh
+        rm -f /tmp/nodesource_setup.sh
+        "${SUDO[@]}" apt-get install -y nodejs
+        if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+          echo "ERROR: Node.js 22 installation failed; node and npm are required to build application assets." >&2
+          exit 1
+        fi
+        NODE_MAJOR="$(node -v | sed -E 's/^v([0-9]+).*/\1/')"
+        if [ "$NODE_MAJOR" -lt 22 ]; then
+          echo "ERROR: Node.js 22 or newer is required, but $(node -v) is installed." >&2
+          exit 1
+        fi
+
+        echo "==> Configuring MySQL"
+        "${SUDO[@]}" systemctl enable --now mysql
+        DB_PASSWORD_SQL="${DB_PASSWORD//\\/\\\\}"
+        DB_PASSWORD_SQL="${DB_PASSWORD_SQL//\'/\'\'}"
+        "${SUDO[@]}" mysql <<SQL
+        CREATE DATABASE IF NOT EXISTS \`${DB_NAME}\`;
+        CREATE USER IF NOT EXISTS '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD_SQL}';
+        ALTER USER '${DB_USER}'@'localhost' IDENTIFIED BY '${DB_PASSWORD_SQL}';
+        GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
+        FLUSH PRIVILEGES;
+        SQL
+
+        echo "==> Checking out the application"
+        "${SUDO[@]}" mkdir -p "$INSTALL_PATH"
+        "${SUDO[@]}" chown "$(id -u):$(id -g)" "$INSTALL_PATH"
+        if [ -d "$APP_DIR/.git" ]; then
+          git -C "$APP_DIR" remote set-url origin https://github.com/SHIVAM73566/VentureX-ERP-CRM.git
+          git -C "$APP_DIR" fetch --depth 1 origin main
+          git -C "$APP_DIR" reset --hard origin/main
+        elif [ -e "$APP_DIR" ]; then
+          echo "ERROR: ${APP_DIR} exists but is not a git repository. Refusing to overwrite it." >&2
+          exit 1
+        else
+          git clone --depth 1 https://github.com/SHIVAM73566/VentureX-ERP-CRM.git "$APP_DIR"
+        fi
+
+        echo "==> Configuring the environment file"
+        if [ ! -f "$APP_DIR/.env" ]; then
+          if [ ! -f "$APP_DIR/.env.example" ]; then
+            echo "ERROR: ${APP_DIR}/.env.example is missing; cannot create .env." >&2
+            exit 1
+          fi
+          cp "$APP_DIR/.env.example" "$APP_DIR/.env"
+        fi
+
+        cat > "$APPLY_ENV_PHP" <<'PHP'
+        <?php
+        declare(strict_types=1);
+
+        $envFile = $argv[1] ?? '';
+        if ($envFile === '' || !is_file($envFile)) {
+            fwrite(STDERR, "ERROR: .env file not found\n");
+            exit(1);
+        }
+
+        $raw = stream_get_contents(STDIN);
+        if ($raw === false) {
+            fwrite(STDERR, "ERROR: unable to read configuration from stdin\n");
+            exit(1);
+        }
+
+        $values = [];
+        foreach (preg_split('/\r?\n/', trim($raw)) as $line) {
+            if ($line === '') {
+                continue;
+            }
+            $parts = preg_split('/\s+/', $line, 2);
+            if (!is_array($parts) || count($parts) !== 2) {
+                fwrite(STDERR, "ERROR: malformed configuration line\n");
+                exit(1);
+            }
+            [$key, $encoded] = $parts;
+            $decoded = base64_decode($encoded, true);
+            if ($decoded === false) {
+                fwrite(STDERR, "ERROR: invalid base64 value for {$key}\n");
+                exit(1);
+            }
+            $values[$key] = $decoded;
+        }
+
+        $required = [
+            'APP_NAME', 'APP_ENV', 'APP_DEBUG', 'APP_URL',
+            'DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE',
+            'DB_USERNAME', 'DB_PASSWORD',
+            'SESSION_DRIVER', 'CACHE_STORE', 'QUEUE_CONNECTION',
+        ];
+        foreach ($required as $key) {
+            if (!array_key_exists($key, $values)) {
+                fwrite(STDERR, "ERROR: missing configuration value for {$key}\n");
+                exit(1);
+            }
+        }
+
+        function encodeEnvValue(string $value): string
+        {
+            if ($value === '') {
+                return '""';
+            }
+            if (preg_match('/^[A-Za-z0-9_.\-\/:@]+$/', $value) === 1) {
+                return $value;
+            }
+            $escaped = str_replace(['\\', '"', '$'], ['\\\\', '\\"', '\\$'], $value);
+            return '"' . $escaped . '"';
+        }
+
+        $lines = file($envFile, FILE_IGNORE_NEW_LINES);
+        if ($lines === false) {
+            fwrite(STDERR, "ERROR: unable to read .env\n");
+            exit(1);
+        }
+
+        $seen = [];
+        $output = [];
+        foreach ($lines as $line) {
+            if (preg_match('/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/', $line, $matches) === 1 && array_key_exists($matches[1], $values)) {
+                $key = $matches[1];
+                $output[] = $key . '=' . encodeEnvValue($values[$key]);
+                $seen[$key] = true;
+            } else {
+                $output[] = $line;
+            }
+        }
+        foreach ($values as $key => $value) {
+            if (!isset($seen[$key])) {
+                $output[] = $key . '=' . encodeEnvValue($value);
+            }
+        }
+
+        $appKey = '';
+        foreach ($output as $line) {
+            if (str_starts_with($line, 'APP_KEY=')) {
+                $appKey = substr($line, strlen('APP_KEY='));
+                break;
+            }
+        }
+        if ($appKey === '' || $appKey === '""' || $appKey === "''") {
+            $newKey = 'base64:' . base64_encode(random_bytes(32));
+            $replaced = false;
+            foreach ($output as $index => $line) {
+                if (str_starts_with($line, 'APP_KEY=')) {
+                    $output[$index] = 'APP_KEY=' . $newKey;
+                    $replaced = true;
+                    break;
+                }
+            }
+            if (!$replaced) {
+                $output[] = 'APP_KEY=' . $newKey;
+            }
+        }
+
+        if (file_put_contents($envFile, implode("\n", $output) . "\n") === false) {
+            fwrite(STDERR, "ERROR: unable to write .env\n");
+            exit(1);
+        }
+        echo "Environment file updated.\n";
+        PHP
+
+        ENV_CONFIG_FILE="$(mktemp)"
+        emit_env() {
+          printf '%s %s\n' "$1" "$(printf '%s' "$2" | base64 | tr -d '\n')" >> "$ENV_CONFIG_FILE"
+        }
+
+        SCHEME="http"
+        if [ -n "$SSL_EMAIL" ]; then
+          SCHEME="https"
+        fi
+
+        emit_env APP_NAME "VentureX ERP"
+        emit_env APP_ENV "$APP_ENV"
+        emit_env APP_DEBUG "false"
+        emit_env APP_URL "${SCHEME}://${DOMAIN}"
+        emit_env DB_CONNECTION "mysql"
+        emit_env DB_HOST "127.0.0.1"
+        emit_env DB_PORT "3306"
+        emit_env DB_DATABASE "$DB_NAME"
+        emit_env DB_USERNAME "$DB_USER"
+        emit_env DB_PASSWORD "$DB_PASSWORD"
+        emit_env SESSION_DRIVER "database"
+        emit_env CACHE_STORE "database"
+        emit_env QUEUE_CONNECTION "database"
+
+        "${SUDO[@]}" "$PHP_BIN" "$APPLY_ENV_PHP" "$APP_DIR/.env" < "$ENV_CONFIG_FILE"
+        rm -f "$ENV_CONFIG_FILE"
+        ENV_CONFIG_FILE=""
+        "${SUDO[@]}" chown "${CURRENT_USER}:www-data" "$APP_DIR/.env"
+        "${SUDO[@]}" chmod 660 "$APP_DIR/.env"
+
+        echo "==> Preparing writable directories"
+        "${SUDO[@]}" chown -R "${CURRENT_USER}:www-data" "$APP_DIR/storage" "$APP_DIR/bootstrap/cache"
+        "${SUDO[@]}" chmod -R 775 "$APP_DIR/storage" "$APP_DIR/bootstrap/cache"
+
+        echo "==> Installing Composer dependencies"
+        cd "$APP_DIR"
+        "$PHP_BIN" "$COMPOSER_BIN" install --no-dev --optimize-autoloader --no-interaction
+
+        echo "==> Building frontend assets"
+        npm ci
+        npm run build
+
+        echo "==> Running database migrations"
+        "$PHP_BIN" artisan migrate --force
+
+        if [ ! -e "$APP_DIR/public/storage" ]; then
+          echo "==> Creating the public storage symlink"
+          "$PHP_BIN" artisan storage:link
+        else
+          echo "The public storage symlink already exists."
+        fi
+
+        if [ "$RUN_SEEDERS" = "true" ]; then
+          echo "=============================================================="
+          echo "WARNING: run-seeders=true. Running demo data seeders."
+          echo "WARNING: No demo login accounts are created. Add users manually."
+          echo "=============================================================="
+          for seeder in PermissionSeeder RoleSeeder MasterDataSeeder CompanySeeder DemoDataSeeder AiSkillSeeder ComprehensiveDemoSeeder; do
+            "$PHP_BIN" artisan db:seed --class="$seeder" --force
+          done
+        else
+          echo "Skipping demo seeders because run-seeders=false."
+        fi
+
+        echo "==> Caching the application"
+        "$PHP_BIN" artisan optimize
+
+        echo "==> Setting application permissions"
+        "${SUDO[@]}" chown -R www-data:www-data "$APP_DIR/storage" "$APP_DIR/bootstrap/cache"
+        "${SUDO[@]}" chmod -R 775 "$APP_DIR/storage" "$APP_DIR/bootstrap/cache"
+
+        echo "==> Installing the queue worker"
+        cat > "$QUEUE_TMP" <<UNIT
+        [Unit]
+        Description=VentureX ERP Queue Worker
+        After=network.target mysql.service
+
+        [Service]
+        User=www-data
+        Group=www-data
+        Restart=always
+        RestartSec=5
+        WorkingDirectory=${APP_DIR}
+        ExecStart=/usr/bin/php${PHP_VERSION} ${APP_DIR}/artisan queue:work --sleep=3 --tries=3 --max-time=3600
+
+        [Install]
+        WantedBy=multi-user.target
+        UNIT
+        "${SUDO[@]}" install -m 644 "$QUEUE_TMP" /etc/systemd/system/venturex-queue.service
+        "${SUDO[@]}" systemctl daemon-reload
+        "${SUDO[@]}" systemctl enable venturex-queue.service
+        "${SUDO[@]}" systemctl restart venturex-queue.service
+
+        echo "==> Installing the scheduler cron entry"
+        cat > "$CRON_TMP" <<CRON
+        * * * * * www-data cd ${APP_DIR} && /usr/bin/php${PHP_VERSION} ${APP_DIR}/artisan schedule:run >> ${APP_DIR}/storage/logs/scheduler.log 2>&1
+        CRON
+        "${SUDO[@]}" install -m 644 "$CRON_TMP" /etc/cron.d/venturex-scheduler
+        "${SUDO[@]}" systemctl enable --now cron
+
+        echo "==> Configuring Nginx"
+        cat > "$NGINX_TMP" <<NGINX
+        server {
+            listen 80;
+            listen [::]:80;
+            server_name ${DOMAIN};
+
+            root ${APP_DIR}/public;
+            index index.php index.html;
+            charset utf-8;
+            client_max_body_size 100M;
+
+            location / {
+                try_files \$uri \$uri/ /index.php?\$query_string;
+            }
+
+            location = /favicon.ico { access_log off; log_not_found off; }
+            location = /robots.txt  { access_log off; log_not_found off; }
+
+            location ~ \.php\$ {
+                include snippets/fastcgi-php.conf;
+                fastcgi_pass unix:/run/php/php${PHP_VERSION}-fpm.sock;
+            }
+
+            location ~ /\.(?!well-known).* {
+                deny all;
+            }
+        }
+        NGINX
+        "${SUDO[@]}" install -m 644 "$NGINX_TMP" /etc/nginx/sites-available/venturex
+        "${SUDO[@]}" ln -sfn /etc/nginx/sites-available/venturex /etc/nginx/sites-enabled/venturex
+        "${SUDO[@]}" rm -f /etc/nginx/sites-enabled/default
+        "${SUDO[@]}" nginx -t
+        "${SUDO[@]}" systemctl enable nginx
+        "${SUDO[@]}" systemctl reload nginx
+        "${SUDO[@]}" systemctl reload "php${PHP_VERSION}-fpm"
+
+        SCHEME="http"
+        if [ -n "$SSL_EMAIL" ]; then
+          echo "==> Requesting a Let's Encrypt certificate"
+          "${SUDO[@]}" certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email "$SSL_EMAIL" --redirect --keep-until-expiring
+          SCHEME="https"
+        else
+          echo "ssl-email was not provided; skipping TLS and serving HTTP only."
+        fi
+
+        echo "==> Verifying the deployment"
+        for service in nginx mysql "php${PHP_VERSION}-fpm"; do
+          if ! "${SUDO[@]}" systemctl is-active --quiet "$service"; then
+            echo "ERROR: service ${service} is not active." >&2
+            "${SUDO[@]}" systemctl status "$service" --no-pager -l || true
+            exit 1
+          fi
+          echo "Service ${service} is active."
+        done
+
+        if [ "$SCHEME" = "https" ]; then
+          HEALTH_URL="https://${DOMAIN}/up"
+          CURL_OPTS=(--resolve "${DOMAIN}:443:127.0.0.1")
+        else
+          HEALTH_URL="http://127.0.0.1/up"
+          CURL_OPTS=(-H "Host: ${DOMAIN}")
+        fi
+
+        echo "Checking ${HEALTH_URL} (via loopback, so server-side DNS is not required)"
+        attempt=1
+        until curl -fsS --max-time 20 "${CURL_OPTS[@]}" "$HEALTH_URL" >/dev/null; do
+          if [ "$attempt" -ge 6 ]; then
+            echo "ERROR: health check failed after ${attempt} attempts: ${HEALTH_URL}" >&2
+            exit 1
+          fi
+          echo "Health check attempt ${attempt} failed; retrying in 5 seconds..."
+          attempt=$((attempt + 1))
+          sleep 5
+        done
+
+        echo "Health check succeeded: ${HEALTH_URL}"
+        echo "VentureX ERP deployment completed."
+        echo "Open ${SCHEME}://${DOMAIN}/install to create the first administrator account."
+        echo "The installer is one-time: it disappears after an administrator is created."
+        REMOTE
+
+        SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=15 -o IdentitiesOnly=yes -i "$HOME/.ssh/deploy_key" -p "$SERVER_PORT")
+
+        ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" 'cat > /tmp/venturex-deploy.sh' < "$REMOTE_SCRIPT"
+        ssh "${SSH_OPTS[@]}" "$SERVER_USER@$SERVER_HOST" 'bash /tmp/venturex-deploy.sh' < "$CONFIG_FILE"
+
+        rm -f "$CONFIG_FILE" "$REMOTE_SCRIPT"
