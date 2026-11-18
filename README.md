@@ -1,34 +1,28 @@
-# VentureX ERP & CRM — GitHub Action
+# VentureX ERP & CRM — GitHub Action (v1.3.1)
 
-Deploy **VentureX ERP & CRM** — the AI-native business operating system for Laravel — to your own Ubuntu server in one workflow run. This composite action provisions PHP 8.4, MySQL, Nginx, Node.js 22, configures Laravel (including `.env`, migrations, caching, storage linking), installs a queue worker and scheduler, and can optionally enable HTTPS with Let's Encrypt.
+Deploy **VentureX ERP & CRM v1.3.1** to your own Ubuntu 22.04 or 24.04 server in one workflow run. This composite action provisions PHP 8.4, MySQL 8, Nginx, Composer, Node.js 22, the application, a queue worker, the Laravel scheduler and optional HTTPS via Let's Encrypt.
 
-> **Verified on v1.3.0:** 484 automated tests passed (1,607 assertions), 0 PHP syntax errors, production asset build passed, live enterprise workflow completed, and red-team probes remediated. This action never prints credentials and never creates a default administrator account.
+[![GitHub Action](https://img.shields.io/badge/GitHub-Action-blue)](https://github.com/features/actions)
+![Version](https://img.shields.io/badge/Version-1.3.1-blue)
+![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04%20%7C%2024.04-orange)
+![PHP](https://img.shields.io/badge/PHP-8.4-purple)
+![MySQL](https://img.shields.io/badge/MySQL-8-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-[![GitHub Marketplace](https://img.shields.io/badge/Available%20on-GitHub%20Marketplace-blue)](https://github.com/marketplace/actions/venturex-erp-crm-deploy)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+> **Marketplace status:** GitHub Marketplace approval is **pending**. This repository is a standard GitHub Action; no Marketplace availability badge is claimed.
 
-> **What it is:** one Laravel application that combines CRM, ERP, procurement, inventory, finance, logistics, HR and 84 enterprise RAG (retrieval-augmented generation) pipelines. This action installs it end-to-end: PHP, MySQL, Nginx, Composer, Node.js, migrations, caching and optional HTTPS via Let's Encrypt. It never creates a login account — you create the first administrator through the one-time installer.
+> **What it is:** one self-hosted Laravel 13 application combining CRM, ERP, procurement, inventory, finance, logistics, HR, support and 84 enterprise RAG pipelines. The action installs the infrastructure and application, runs migrations, installs a queue worker and scheduler, and leaves first-administrator creation to the one-time `/install` wizard. It never creates a known default password.
 
 ---
 
-## Platform Highlights
+## Platform highlights
 
-The action deploys the full VentureX ERP & CRM platform, including:
-
-- **HR suite** - employee directory, attendance, leave, payroll runs, performance
-  reviews and automated onboarding.
-- **AERO X Agentic Engine** - autonomous, auditable rules that draft purchase
-  orders on low stock, flag overdue invoices, self-assign support tickets and
-  seed onboarding checklists. Every run is transactional and rolled back on
-  failure.
-- **84 RAG pipelines** across seven domains (CRM, procurement, inventory,
-  finance, logistics, executive and HR) with sources, confidence and latency.
-- **Key-only AI onboarding** - paste a key for NVIDIA NIM, Google Gemini, OpenAI
-  or Anthropic Claude; endpoints and models are wired server-side.
-- **AERO X Super Intelligence Brain** - AES-256 encrypted credentials, prompt/PII
-  sanitisation, threat detection, rate limiting and audit telemetry.
-- **Invoice branding** - upload a logo and set accent colour, PDF typography,
-  tax/registration IDs, footer, terms and watermark from Settings.
+- **HR suite** — employees, attendance, leave, payroll, performance reviews and onboarding.
+- **AERO X Agentic Engine** — auditable, transactional automation rules with rollback on failure.
+- **84 RAG pipelines** across CRM, procurement, inventory, finance, logistics, executive and HR domains, with sources, confidence and latency.
+- **Key-only AI onboarding** — NVIDIA NIM, Google Gemini, OpenAI or Anthropic Claude keys are configured inside the app.
+- **AERO X Super Intelligence Brain** — encrypted credentials, prompt/PII sanitisation, threat detection, rate limiting and audit telemetry.
+- **Invoice branding** — logo, accent colour, PDF typography, tax IDs, footer, terms and watermark.
 
 ---
 
@@ -36,72 +30,52 @@ The action deploys the full VentureX ERP & CRM platform, including:
 
 | Step | Result |
 |---|---|
-| Installs dependencies | PHP 8.4 + required extensions, MySQL, Nginx, Node.js 22, Composer |
-| Creates the database | MySQL database and user with the credentials you provide |
-| Deploys the app | Idempotently checks out `VentureX-ERP-CRM` (fetch/reset or shallow clone), installs Composer/npm packages, builds assets |
-| Configures the environment | Generates `APP_KEY` if empty, sets `APP_ENV`, `APP_DEBUG=false`, `APP_URL`, database/cache/session/queue values via base64-encoded secret handling |
-| Prepares the database | Runs migrations; optional demo data seeding via `run-seeders` (never creates login accounts) |
-| Optimises | Storage link, `php artisan optimize` (config/route/view caches) |
-| Serves it | Nginx virtual host with a 100 MB upload limit + optional HTTPS via Let's Encrypt; reloads Nginx and PHP-FPM |
-| Verifies | Checks Nginx, PHP-FPM and MySQL are active, then performs a loopback `/up` health check (no server-side DNS required) |
+| Installs dependencies | PHP **8.4** + required extensions, MySQL **8**, Nginx, Node.js 22, Composer |
+| Creates the database | MySQL database and user from GitHub Secrets |
+| Deploys the app | Idempotently checks out `VentureX-ERP-CRM` (fetch/reset or shallow clone); installs Composer/npm packages and builds assets |
+| Configures the environment | Writes/escapes `.env` values without interpolating secrets into shell command lines; generates `APP_KEY` if empty; sets `APP_ENV`, `APP_DEBUG=false`, `APP_URL` and DB/cache/session/queue values |
+| Prepares the database | Runs `php artisan migrate --force`; optional demo data seeding is disabled by default and never creates login accounts |
+| Optimises | Storage link and `php artisan optimize` |
+| Serves it | Nginx virtual host with `public/` as document root, 100 MB upload limit and optional Let's Encrypt HTTPS |
+| Runs background work | Installs a `systemd` **queue worker** and a cron entry for `php artisan schedule:run` |
+| Verifies | Checks Nginx, PHP-FPM and MySQL are active, then performs a loopback `/up` health check |
+
+The web root is always the application's `public/` directory. The root `.htaccess` in the source repository is only a fallback and is not needed with this action's Nginx configuration.
 
 ---
 
-## Features
-
-- Installs PHP 8.4 with required extensions (mbstring, xml, curl, gd, zip, bcmath, intl, fileinfo, tokenizer, pdo_mysql, sqlite3, dom, simplexml)
-- Installs and configures MySQL, Nginx, Composer, Node.js 22
-- Idempotent application checkout (`git fetch/reset` if already cloned, otherwise `git clone --depth 1`)
-- Secure secret handling: database and environment values are passed to the server base64-encoded and applied by a small PHP script (no secrets interpolated into shell command lines)
-- Creates/updates MySQL database and user idempotently
-- Runs `composer install --no-dev --optimize-autoloader`, `npm ci && npm run build`
-- Generates `.env` from `.env.example` only if missing; sets `APP_ENV`, `APP_DEBUG=false`, `APP_URL`, generates `APP_KEY` if empty, configures database/cache/session/queue for database-backed defaults
-- Runs migrations, links `public/storage` if missing, runs `php artisan optimize`
-- Sets correct ownership/permissions on `storage` and `bootstrap/cache`
-- Installs a `systemd` queue worker unit and a cron entry for `php artisan schedule:run`
-- Configures Nginx for the domain with `fastcgi_pass unix:/run/php/php8.4-fpm.sock` (using the selected `php-version`), a 100 MB upload limit, and adds TLS via `certbot --nginx` only when `ssl-email` is provided
-- Reloads Nginx and PHP-FPM after each deploy
-- Verifies `nginx`, `mysql`, and `php*-fpm` are active, then performs a health check against `/up` via loopback (with `--resolve` or a `Host` header), so server-side DNS is not required
-- Install-path validation (absolute, dedicated directory, no `..` or whitespace) and input validation for host, user, port, domain, email, database names and PHP version
-- Demo seeding is disabled by default; when `run-seeders: 'true'` it seeds demo *data* but never creates demo login accounts
-
 ## Prerequisites
 
-- Ubuntu 22.04 or 24.04
-- A domain pointed to your server IP
-- SSH access to the server (root or a user with passwordless `sudo -n`)
-- This action only supports Debian/Ubuntu with `apt-get` (it will fail clearly if unsupported)
-
-## Security Notes
-
-- Store all sensitive values in GitHub Secrets. Never commit SSH keys or database passwords.
-- If `known-hosts` is not provided, the action uses `ssh-keyscan` and explicitly warns that the host key is not pinned (MITM risk).
-- Prefer pinning `known-hosts` to the server's host key.
-- For reproducibility in production, pin this action to a full commit SHA rather than `@main`.
-- The action never creates a known administrator password and prints no credentials after deployment.
+- Ubuntu **22.04 or 24.04**
+- A domain pointed to the server IP
+- SSH access (root, or a user with passwordless `sudo -n`)
+- Ports 80 and 443 open
+- Only Debian/Ubuntu with `apt-get` is supported
 
 ## Inputs
 
 | Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `server-host` | Yes | - | Server hostname or IP address. |
-| `server-user` | No | `root` | SSH username. Use `root` or a user with passwordless `sudo`. |
-| `server-key` | Yes | - | SSH private key for authentication. |
-| `server-port` | No | `22` | SSH port number. |
-| `domain` | Yes | - | Domain name that points at the server. |
-| `ssl-email` | No | `''` | Email for Let's Encrypt. If empty, skip TLS and serve HTTP only. |
-| `db-name` | No | `venturex_erp` | MySQL database name. |
-| `db-user` | No | `venturex_user` | MySQL database username. |
-| `db-password` | Yes | - | MySQL database password. Store in GitHub Secrets. |
-| `install-path` | No | `/var/www/venturex` | Directory on the server that will contain the application checkout. |
-| `php-version` | No | `8.4` | PHP version to install. Requires PHP 8.4 or newer. |
-| `app-env` | No | `production` | Laravel `APP_ENV` value. |
-| `run-seeders` | No | `false` | Seed demo data (`true`/`false`). Never creates demo login accounts. |
-| `known-hosts` | No | `''` | Pinned SSH host key line(s) written to `~/.ssh/known_hosts`. If empty, `ssh-keyscan` is used and the host key is not pinned. |
+|---|---|---|---|
+| `server-host` | Yes | — | Server hostname or IP address. |
+| `server-user` | No | `root` | SSH username; must have passwordless sudo if not root. |
+| `server-key` | Yes | — | SSH private key. Store in GitHub Secrets. |
+| `server-port` | No | `22` | SSH port. |
+| `domain` | Yes | — | Domain pointing at the server. |
+| `ssl-email` | No | `''` | Let's Encrypt email. Empty skips TLS. |
+| `db-name` | No | `venturex_erp` | MySQL 8 database name. |
+| `db-user` | No | `venturex_user` | MySQL 8 database user. |
+| `db-password` | Yes | — | MySQL password. Store in GitHub Secrets. |
+| `install-path` | No | `/var/www/venturex` | Parent directory for the checkout. |
+| `php-version` | No | `8.4` | PHP version; must be 8.4 or newer. |
+| `app-env` | No | `production` | Laravel `APP_ENV`. |
+| `run-seeders` | No | `false` | Optional demo data. Never creates login accounts. |
+| `known-hosts` | No | `''` | Pinned SSH host key. Empty uses `ssh-keyscan` with an explicit MITM warning. |
+
+---
 
 ## Quick start
 
-Add this to `.github/workflows/deploy.yml` in your repository:
+Add this to `.github/workflows/deploy.yml`:
 
 ```yaml
 name: Deploy VentureX ERP
@@ -115,8 +89,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy VentureX ERP
-        uses: SHIVAM73566/venturex-deploy-action@v1
+      - name: Deploy VentureX ERP v1.3.1
+        uses: SHIVAM73566/venturex-deploy-action@v1.3.1
         with:
           server-host: ${{ secrets.SERVER_HOST }}
           server-user: ${{ secrets.SERVER_USER }}
@@ -134,153 +108,108 @@ jobs:
           known-hosts: ${{ secrets.KNOWN_HOSTS }}
 ```
 
-**Note:** For reproducibility and security, pin to a specific commit SHA (e.g., `uses: SHIVAM73566/venturex-deploy-action@<commit-sha>`) instead of `@main` or a moving tag.
+> **Tag status:** the `@v1.3.1` tag is pending creation during central integration. Until it exists, pin the action to the full verified commit SHA:
+> `uses: SHIVAM73566/venturex-deploy-action@<full-commit-sha>`
+> Do not use `@main` or a moving branch for production.
 
-### Quick examples
+### Examples
 
-**1. Deploy to a fresh DigitalOcean droplet**
+**Fresh VPS**
 
 ```yaml
-      - uses: SHIVAM73566/venturex-deploy-action@v1
+      - uses: SHIVAM73566/venturex-deploy-action@v1.3.1
         with:
           server-host: ${{ secrets.DO_SERVER_IP }}
           server-user: root
           server-key: ${{ secrets.DO_SSH_KEY }}
-          domain: erp.yourdomain.com
+          domain: erp.example.com
           db-password: ${{ secrets.DB_PASSWORD }}
 ```
 
-**2. Deploy to a custom SSH port with a non-root user**
+**Custom SSH port and non-root user**
 
 ```yaml
-      - uses: SHIVAM73566/venturex-deploy-action@v1
+      - uses: SHIVAM73566/venturex-deploy-action@v1.3.1
         with:
-          server-host: erp.yourdomain.com
+          server-host: erp.example.com
           server-user: deploy
           server-key: ${{ secrets.SERVER_KEY }}
           server-port: '2222'
-          domain: erp.yourdomain.com
+          domain: erp.example.com
           db-password: ${{ secrets.DB_PASSWORD }}
+          known-hosts: ${{ secrets.KNOWN_HOSTS }}
 ```
-
-**3. Pin a PHP version and install path**
-
-```yaml
-      - uses: SHIVAM73566/venturex-deploy-action@v1
-        with:
-          server-host: ${{ secrets.SERVER_HOST }}
-          server-user: root
-          server-key: ${{ secrets.SERVER_KEY }}
-          domain: erp.yourdomain.com
-          db-password: ${{ secrets.DB_PASSWORD }}
-          php-version: '8.4'
-          install-path: /var/www/venturex
-```
-
-## After the first deployment
-
-The action never creates a login account, so it cannot leak a known password.
-Open `https://<domain>/install` (or `http://<domain>/install` when `ssl-email`
-is empty) on the first visit and complete the installer. It creates the
-`super_admin` account, runs migrations idempotently, and then disappears.
-
-If you seed demo data with `run-seeders: 'true'`, the installer still creates
-the administrator; demo data contains no usable credentials.
-
-The application is checked out to `<install-path>/venturex-erp` (for example,
-`/var/www/venturex/venturex-erp`). Re-running the workflow fast-forwards that
-checkout to `origin/main`; the `.env` file is preserved.
-
-### First 10 minutes in the product
-
-1. Open **Help → Getting Started** for the guided product tour.
-2. Open the floating **Product guide** (bottom-right on every page) for the introduction and a searchable list of all 84 RAG pipelines, plus questions matched to the page you are on.
-3. Open **AI Center → Enterprise RAG → Open the pipeline tour** to see all 84 pipelines.
-4. Index a domain (for example Finance) and ask: *"Which invoices are more than 30 days overdue?"*
-5. Review the answer's sources, confidence and latency, then act in the module.
-6. Invite your team and assign roles.
 
 ---
 
-## How companies use it
+## Installer mode behavior
 
-| Company | Typical use |
-|---|---|
-| Small business (5–50) | Owner runs sales, stock, invoices and cash from one login; no separate CRM/ERP subscriptions. |
-| Wholesale distributor | Supplier reliability, reorder planning and dead-stock reduction from live stock and PO data. |
-| Manufacturer | Material requirement forecasts, lead-time tracking and landed-cost control. |
-| Importer / exporter | HS-code guidance, demurrage risk, freight benchmarking and customs-document readiness. |
-| Services agency | Pipeline, quote conversion and receivables insight. |
-| Group / enterprise | Company-scoped data, role permissions, audit logs and executive scorecards. |
+The action prepares infrastructure and runs migrations, but intentionally creates **no administrator account**. On the first visit:
 
-### What makes it different
+1. Open `https://<domain>/install` (or `http://` when `ssl-email` is empty).
+2. Choose **Clean Production Mode** — recommended. It uses the already-migrated schema and creates only the administrator you specify; no demo users or sample records are added by the installer.
+3. If you deliberately set `run-seeders: 'true'` for a disposable evaluation, sample records may exist, but there are still no known demo login credentials. Prefer `false` for customer and production installs.
+4. The installer writes `storage/.installed` and is then disabled. It never publishes a default password.
 
-- **84 focused RAG pipelines**, not one generic chatbot — each pipeline knows its domain and source records.
-- **Guided from inside the product** — a floating Product guide on every page carries the introduction, all 84 pipelines and questions matched to the current screen.
-- **Local-first retrieval** — embeddings and similarity run on your server; no external vector database required.
-- **Explainable answers** — every response includes sources, confidence and latency.
-- **Human approval stays in control** — purchases, payments, exports and permission changes are never autonomous.
-- **One codebase, full stack** — CRM + ERP + AI + logistics + finance, self-hosted on your infrastructure.
+The application is checked out to `<install-path>/venturex-erp` (for example `/var/www/venturex/venturex-erp`). Re-running the workflow updates that checkout and preserves `.env`.
+
+---
+
+## Security notes
+
+- Store SSH keys, database passwords and host keys in GitHub Secrets. Never commit them.
+- Prefer `known-hosts` pinning; without it the action warns that `ssh-keyscan` does not protect the first connection against MITM.
+- Pin to a full commit SHA for reproducibility. The v1.3.1 tag is pending central integration.
+- Secrets are base64-encoded and applied by a server-side PHP helper; they are not interpolated into shell command lines or printed after deployment.
+- The installer creates the first administrator over HTTPS; do not share or commit the chosen password.
 
 ---
 
 ## Setup GitHub Secrets
 
-Go to **Settings → Secrets and variables → Actions → New repository secret** and create:
-
 | Secret | Value |
-|--------|-------|
-| `SERVER_HOST` | Your server IP or hostname |
-| `SERVER_USER` | SSH username (`root` or a user with passwordless sudo) |
-| `SERVER_KEY` | Your SSH private key (PEM/OpenSSH format) |
-| `DOMAIN` | Your domain (e.g., `erp.example.com`) |
-| `SSL_EMAIL` | Email for Let's Encrypt (only needed if you want TLS) |
-| `DB_PASSWORD` | MySQL password |
-| `KNOWN_HOSTS` | (Optional) Pinned host key line(s) from `ssh-keyscan` or `ssh -o FingerprintHash=sha256 ...` |
+|---|---|
+| `SERVER_HOST` | Server IP or hostname |
+| `SERVER_USER` | `root` or a passwordless-sudo user |
+| `SERVER_KEY` | Full SSH private key including header/footer |
+| `DOMAIN` | e.g. `erp.example.com` |
+| `SSL_EMAIL` | Let's Encrypt email (optional) |
+| `DB_PASSWORD` | MySQL 8 password |
+| `KNOWN_HOSTS` | Optional pinned host key line(s) |
 
 ---
 
-## Requirements
+## Verification and troubleshooting
 
-- Ubuntu 20.04+ (22.04/24.04 recommended)
-- Root or passwordless-sudo SSH access
-- A domain pointed at the server IP
-- Ports 80 and 443 open
-
-## Verification & Troubleshooting
-
-- The action verifies `nginx`, `mysql`, and `php*-fpm` are active.
-- It performs a health check against `/up` over loopback (using `--resolve` for HTTPS or a `Host` header for HTTP) with retries and fails if the endpoint does not return success.
-- If assets fail to build, confirm Node.js 22 is available on the runner (the action fails loudly if `node`/`npm` are missing or too old).
-- If migrations fail, check Laravel logs on the server under `storage/logs/`.
-- If passwordless sudo fails for a non-root user, the action will fail with a clear message.
-- If you do not provide `ssl-email`, the site will be served over HTTP only.
+- Verifies `nginx`, `mysql` and `php*-fpm` are active.
+- Performs a loopback `/up` health check with retries; server-side DNS is not required.
+- If assets fail, confirm Node.js 22 is available on the runner.
+- If migrations fail, check `storage/logs/laravel.log` on the server.
+- If a non-root user cannot sudo, grant passwordless `sudo -n`.
+- Without `ssl-email`, the site is served over HTTP only.
 
 | Symptom | Fix |
 |---|---|
-| `Permission denied (publickey)` | Check `SERVER_KEY` is the full private key including header/footer. |
-| Nginx 502 | Confirm PHP-FPM is installed for the chosen `php-version`. |
-| Blank page after deploy | Check `storage/logs/laravel.log` and file permissions on `storage` / `bootstrap/cache`. |
-| Certificate failed | Confirm DNS already points at the server, then re-run the workflow. |
+| `Permission denied (publickey)` | Check `SERVER_KEY` includes the full private key. |
+| Nginx 502 | Confirm PHP 8.4 FPM is installed and running. |
+| Blank page | Check `storage/logs/laravel.log` and permissions on `storage` / `bootstrap/cache`. |
+| Certificate failed | Confirm DNS points to the server, then re-run. |
+| Queue jobs not running | Check `systemctl status venturex-queue.service`. |
 
-## What This Action Does NOT Do
+## What this action does not do
 
-- Docker deployment (not handled by this action)
-- Shared hosting or cPanel
-- Guaranteed outcomes or managed hosting
-
-## Marketplace
-
-Pricing information may appear on the GitHub Marketplace listing; this README describes functionality only. No guarantees of pricing or availability are implied.
+- Docker or shared-hosting/cPanel deployment
+- Managed hosting or guaranteed outcomes
+- GitHub Marketplace approval (pending)
 
 ## Support
 
 - Product documentation: <https://github.com/SHIVAM73566/VentureX-ERP-CRM/tree/main/documentation>
-- Getting Started: <https://github.com/SHIVAM73566/VentureX-ERP-CRM/blob/main/documentation/GETTING-STARTED.md>
-- 84-pipeline RAG guide: <https://github.com/SHIVAM73566/VentureX-ERP-CRM/blob/main/documentation/RAG-GUIDE.md>
+- Security report: <https://github.com/SHIVAM73566/VentureX-ERP-CRM/blob/main/SECURITY-AUDIT-REPORT.md>
 - Issues: <https://github.com/SHIVAM73566/VentureX-ERP-CRM/issues>
-- Maintainer: Shivam Chaturvedi — chaturvedishivam179@gmail.com
+- Maintainer: **Shivam Chaturvedi** — chaturvedishivam179@gmail.com
+- PayPal checkout / sales: chaturvedishivam179@gmail.com
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT License — see [LICENSE](LICENSE). Copyright © 2026 Shivam Chaturvedi.

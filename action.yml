@@ -1,5 +1,5 @@
-name: 'VentureX ERP & CRM Deploy'
-description: 'Deploy AI-native VentureX ERP & CRM to Ubuntu: Nginx, PHP 8.4, MySQL, queue worker, scheduler and optional HTTPS.'
+name: 'VentureX ERP & CRM Deploy (v1.3.1)'
+description: 'Deploy VentureX ERP & CRM v1.3.1 to Ubuntu 22.04/24.04 with PHP 8.4, MySQL 8, Nginx, queue worker, scheduler and optional HTTPS; first admin is created by the one-time /install wizard.'
 author: 'SHIVAM73566'
 
 branding:
@@ -52,7 +52,7 @@ inputs:
     required: false
     default: 'production'
   run-seeders:
-    description: 'Run demo data seeders (true/false). Demo seeding is disabled by default.'
+    description: 'Optional demo data for disposable installs (true/false). Disabled by default; never creates login accounts. Use false for Clean Production Mode.'
     required: false
     default: 'false'
   known-hosts:
@@ -161,7 +161,7 @@ runs:
 
         echo "Input validation passed for ${DOMAIN} (PHP ${PHP_VERSION}, APP_ENV ${APP_ENV_INPUT})."
         if [ "$RUN_SEEDERS" = "true" ]; then
-          echo "::warning::run-seeders=true. Demo users and sample data will be created."
+          echo "::warning::run-seeders=true. Optional demo sample data will be created; no login accounts are created. Use false for Clean Production Mode."
         fi
 
     - name: Configure SSH
