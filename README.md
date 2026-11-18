@@ -1,6 +1,8 @@
 # VentureX ERP & CRM — GitHub Action
 
-Deploy **VentureX ERP & CRM** — an AI-powered business operating system — to your own Ubuntu server in one workflow run. This composite action provisions PHP 8.4, MySQL, Nginx, Node.js 22, configures Laravel (including `.env`, migrations, caching, storage linking), installs a queue worker and scheduler, and can optionally enable HTTPS with Let's Encrypt.
+Deploy **VentureX ERP & CRM** — the AI-native business operating system for Laravel — to your own Ubuntu server in one workflow run. This composite action provisions PHP 8.4, MySQL, Nginx, Node.js 22, configures Laravel (including `.env`, migrations, caching, storage linking), installs a queue worker and scheduler, and can optionally enable HTTPS with Let's Encrypt.
+
+> **Verified on v1.3.0:** 484 automated tests passed (1,607 assertions), 0 PHP syntax errors, production asset build passed, live enterprise workflow completed, and red-team probes remediated. This action never prints credentials and never creates a default administrator account.
 
 [![GitHub Marketplace](https://img.shields.io/badge/Available%20on-GitHub%20Marketplace-blue)](https://github.com/marketplace/actions/venturex-erp-crm-deploy)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)

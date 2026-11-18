@@ -1,5 +1,5 @@
 name: 'VentureX ERP & CRM Deploy'
-description: 'Deploy VentureX ERP & CRM to an Ubuntu server over SSH with Nginx, PHP 8.4, MySQL, a queue worker, and a scheduler.'
+description: 'Deploy AI-native VentureX ERP & CRM to Ubuntu: Nginx, PHP 8.4, MySQL, queue worker, scheduler and optional HTTPS.'
 author: 'SHIVAM73566'
 
 branding:
